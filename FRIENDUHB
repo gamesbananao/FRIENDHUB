@@ -10,11 +10,12 @@ local LocalPlayer = Players.LocalPlayer
 
 -- Sistema de Salvamento
 local CONFIG_FILE = "FriendHub_Config.json"
+local SETTINGS_FILE = "FriendHub_Settings.json"
 
--- Configurações padrão
+-- Configuracoes padrao
 local DefaultFeatures = {
-    SilentAim = true,
-    ESP = true,
+    SilentAim = false,
+    ESP = false,
     TeamCheck = true,
     ShowSkeleton = true,
     ShowTracer = true,
@@ -30,7 +31,39 @@ local DefaultKeybinds = {
     TeamCheck = nil
 }
 
--- Função para carregar configurações
+local DefaultSettings = {
+    AutoLoad = false,
+    AutoSave = true
+}
+
+-- Funcao para carregar settings
+local function LoadSettings()
+    local success, result = pcall(function()
+        if not isfile or not readfile then return nil end
+        if isfile(SETTINGS_FILE) then
+            local data = readfile(SETTINGS_FILE)
+            return game:GetService("HttpService"):JSONDecode(data)
+        end
+        return nil
+    end)
+    
+    if success and result then
+        return result
+    else
+        return DefaultSettings
+    end
+end
+
+-- Funcao para salvar settings
+local function SaveSettings(settings)
+    pcall(function()
+        if not writefile then return end
+        local json = game:GetService("HttpService"):JSONEncode(settings)
+        writefile(SETTINGS_FILE, json)
+    end)
+end
+
+-- Funcao para carregar configuracoes
 local function LoadConfig()
     local success, result = pcall(function()
         if not isfile or not readfile then return nil end
@@ -48,7 +81,35 @@ local function LoadConfig()
     end
 end
 
--- Função para salvar configurações
+-- Carregar settings primeiro
+local Settings = LoadSettings()
+
+-- Carregar configuracoes baseado no AutoLoad
+local savedConfig
+if Settings.AutoLoad then
+    savedConfig = LoadConfig()
+else
+    savedConfig = {Features = DefaultFeatures, Keybinds = DefaultKeybinds}
+end
+
+local Features = {}
+local Keybinds = {}
+
+-- Aplicar configuracoes carregadas
+for k, v in pairs(DefaultFeatures) do
+    Features[k] = savedConfig.Features[k] ~= nil and savedConfig.Features[k] or v
+end
+
+for k, v in pairs(savedConfig.Keybinds or {}) do
+    if v then
+        local keyName = v:match("Enum%.KeyCode%.(.+)")
+        if keyName and Enum.KeyCode[keyName] then
+            Keybinds[k] = Enum.KeyCode[keyName]
+        end
+    end
+end
+
+-- Funcao para salvar configuracoes
 local function SaveConfig()
     pcall(function()
         if not writefile then return end
@@ -57,7 +118,6 @@ local function SaveConfig()
             Keybinds = {}
         }
         
-        -- Converter KeyCodes para strings
         for k, v in pairs(Keybinds) do
             if v then
                 data.Keybinds[k] = tostring(v)
@@ -67,25 +127,6 @@ local function SaveConfig()
         local json = game:GetService("HttpService"):JSONEncode(data)
         writefile(CONFIG_FILE, json)
     end)
-end
-
--- Carregar configurações salvas
-local savedConfig = LoadConfig()
-local Features = {}
-local Keybinds = {}
-
--- Aplicar configurações carregadas
-for k, v in pairs(DefaultFeatures) do
-    Features[k] = savedConfig.Features[k] ~= nil and savedConfig.Features[k] or v
-end
-
-for k, v in pairs(savedConfig.Keybinds) do
-    if v then
-        local keyCode = Enum.KeyCode[v:match("Enum%.KeyCode%.(.+)")]
-        if keyCode then
-            Keybinds[k] = keyCode
-        end
-    end
 end
 
 local espObjects = {}
@@ -103,7 +144,7 @@ ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
 -- Marco principal
 local MainFrame = Instance.new("Frame")
 MainFrame.Name = "MainMenu"
-MainFrame.Size = UDim2.new(0, 340, 0, 480)
+MainFrame.Size = UDim2.new(0, 340, 0, 520)
 MainFrame.Position = UDim2.new(0, 50, 0, 50)
 MainFrame.BackgroundColor3 = Color3.fromRGB(18, 18, 22)
 MainFrame.BorderSizePixel = 0
@@ -130,7 +171,7 @@ Shadow.ScaleType = Enum.ScaleType.Slice
 Shadow.SliceCenter = Rect.new(49, 49, 450, 450)
 Shadow.Parent = MainFrame
 
--- Barra de título com gradiente
+-- Barra de titulo
 local TitleBar = Instance.new("Frame")
 TitleBar.Size = UDim2.new(1, 0, 0, 50)
 TitleBar.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
@@ -160,33 +201,19 @@ TitleText.Font = Enum.Font.GothamBold
 TitleText.TextXAlignment = Enum.TextXAlignment.Left
 TitleText.Parent = TitleBar
 
--- Indicador de Auto-Save
-local SaveIndicator = Instance.new("TextLabel")
-SaveIndicator.Size = UDim2.new(0, 100, 0, 15)
-SaveIndicator.Position = UDim2.new(0, 15, 1, -18)
-SaveIndicator.BackgroundTransparency = 1
-SaveIndicator.Text = "Auto-Save ON"
-SaveIndicator.TextColor3 = Color3.fromRGB(100, 255, 150)
-SaveIndicator.TextSize = 10
-SaveIndicator.Font = Enum.Font.Gotham
-SaveIndicator.TextXAlignment = Enum.TextXAlignment.Left
-SaveIndicator.Parent = TitleBar
+-- Status indicator
+local StatusLabel = Instance.new("TextLabel")
+StatusLabel.Size = UDim2.new(0, 150, 0, 15)
+StatusLabel.Position = UDim2.new(0, 15, 1, -18)
+StatusLabel.BackgroundTransparency = 1
+StatusLabel.Text = Settings.AutoLoad and "AutoLoad: ON" or "AutoLoad: OFF"
+StatusLabel.TextColor3 = Settings.AutoLoad and Color3.fromRGB(100, 255, 150) or Color3.fromRGB(255, 150, 100)
+StatusLabel.TextSize = 10
+StatusLabel.Font = Enum.Font.Gotham
+StatusLabel.TextXAlignment = Enum.TextXAlignment.Left
+StatusLabel.Parent = TitleBar
 
--- Animação do indicador
-task.spawn(function()
-    while SaveIndicator.Parent do
-        TweenService:Create(SaveIndicator, TweenInfo.new(0.8, Enum.EasingStyle.Sine), {
-            TextTransparency = 0.3
-        }):Play()
-        task.wait(0.8)
-        TweenService:Create(SaveIndicator, TweenInfo.new(0.8, Enum.EasingStyle.Sine), {
-            TextTransparency = 0
-        }):Play()
-        task.wait(0.8)
-    end
-end)
-
--- Botão cerrar
+-- Botao fechar
 local CloseBtn = Instance.new("TextButton")
 CloseBtn.Size = UDim2.new(0, 35, 0, 35)
 CloseBtn.Position = UDim2.new(1, -42, 0, 7)
@@ -208,11 +235,11 @@ CloseBtn.MouseButton1Click:Connect(function()
     }):Play()
     task.wait(0.2)
     MainFrame.Visible = false
-    MainFrame.Size = UDim2.new(0, 340, 0, 480)
+    MainFrame.Size = UDim2.new(0, 340, 0, 520)
     MainFrame.Position = UDim2.new(0, 50, 0, 50)
 end)
 
--- Contenedor de opciones
+-- Contenedor de opcoes
 local ContentFrame = Instance.new("ScrollingFrame")
 ContentFrame.Size = UDim2.new(1, -20, 1, -65)
 ContentFrame.Position = UDim2.new(0, 10, 0, 60)
@@ -231,7 +258,7 @@ UIList:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
     ContentFrame.CanvasSize = UDim2.new(0, 0, 0, UIList.AbsoluteContentSize.Y + 20)
 end)
 
--- Función para crear Toggle con Keybind
+-- Funcao para criar Toggle com Keybind
 local function CreateToggle(text, featureKey, default)
     local Frame = Instance.new("Frame")
     Frame.Size = UDim2.new(1, 0, 0, 48)
@@ -308,7 +335,9 @@ local function CreateToggle(text, featureKey, default)
             end
         end
         
-        SaveConfig() -- Auto-save
+        if Settings.AutoSave then
+            SaveConfig()
+        end
     end
     
     ToggleBtn.MouseButton1Click:Connect(toggleState)
@@ -346,11 +375,133 @@ local function CreateToggle(text, featureKey, default)
     return {
         frame = Frame,
         toggle = toggleState,
+        getState = function() return state end,
+        setState = function(newState)
+            state = newState
+            Features[featureKey] = state
+            ToggleBtn.Text = state and "ON" or "OFF"
+            ToggleBtn.BackgroundColor3 = state and Color3.fromRGB(80, 200, 120) or Color3.fromRGB(200, 70, 70)
+        end
+    }
+end
+
+-- Funcao para criar Toggle simples (sem keybind)
+local function CreateSimpleToggle(text, default, callback)
+    local Frame = Instance.new("Frame")
+    Frame.Size = UDim2.new(1, 0, 0, 48)
+    Frame.BackgroundColor3 = Color3.fromRGB(30, 30, 38)
+    Frame.BorderSizePixel = 0
+    
+    local Corner = Instance.new("UICorner")
+    Corner.CornerRadius = UDim.new(0, 10)
+    Corner.Parent = Frame
+    
+    local Gradient = Instance.new("UIGradient")
+    Gradient.Color = ColorSequence.new{
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(35, 35, 43)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(25, 25, 33))
+    }
+    Gradient.Rotation = 90
+    Gradient.Parent = Frame
+    
+    local Label = Instance.new("TextLabel")
+    Label.Size = UDim2.new(0.7, -10, 1, 0)
+    Label.Position = UDim2.new(0, 15, 0, 0)
+    Label.BackgroundTransparency = 1
+    Label.Text = text
+    Label.TextColor3 = Color3.fromRGB(220, 220, 230)
+    Label.TextSize = 14
+    Label.Font = Enum.Font.GothamSemibold
+    Label.TextXAlignment = Enum.TextXAlignment.Left
+    Label.Parent = Frame
+    
+    local ToggleBtn = Instance.new("TextButton")
+    ToggleBtn.Size = UDim2.new(0, 60, 0, 30)
+    ToggleBtn.Position = UDim2.new(1, -70, 0.5, -15)
+    ToggleBtn.BackgroundColor3 = default and Color3.fromRGB(80, 200, 120) or Color3.fromRGB(200, 70, 70)
+    ToggleBtn.Text = default and "ON" or "OFF"
+    ToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    ToggleBtn.TextSize = 13
+    ToggleBtn.Font = Enum.Font.GothamBold
+    ToggleBtn.Parent = Frame
+    
+    local ToggleCorner = Instance.new("UICorner")
+    ToggleCorner.CornerRadius = UDim.new(0, 6)
+    ToggleCorner.Parent = ToggleBtn
+    
+    local state = default
+    
+    ToggleBtn.MouseButton1Click:Connect(function()
+        state = not state
+        ToggleBtn.Text = state and "ON" or "OFF"
+        TweenService:Create(ToggleBtn, TweenInfo.new(0.2), {
+            BackgroundColor3 = state and Color3.fromRGB(80, 200, 120) or Color3.fromRGB(200, 70, 70)
+        }):Play()
+        
+        if callback then
+            callback(state)
+        end
+    end)
+    
+    Frame.Parent = ContentFrame
+    
+    return {
+        frame = Frame,
         getState = function() return state end
     }
 end
 
--- Función para crear Slider
+-- Funcao para criar Botao
+local function CreateButton(text, color, callback)
+    local Button = Instance.new("TextButton")
+    Button.Size = UDim2.new(1, 0, 0, 42)
+    Button.BackgroundColor3 = color or Color3.fromRGB(60, 120, 200)
+    Button.Text = text
+    Button.TextColor3 = Color3.fromRGB(255, 255, 255)
+    Button.TextSize = 14
+    Button.Font = Enum.Font.GothamBold
+    Button.Parent = ContentFrame
+    
+    local Corner = Instance.new("UICorner")
+    Corner.CornerRadius = UDim.new(0, 10)
+    Corner.Parent = Button
+    
+    local originalColor = color or Color3.fromRGB(60, 120, 200)
+    
+    Button.MouseEnter:Connect(function()
+        TweenService:Create(Button, TweenInfo.new(0.2), {
+            BackgroundColor3 = Color3.fromRGB(
+                math.min(originalColor.R * 255 + 30, 255),
+                math.min(originalColor.G * 255 + 30, 255),
+                math.min(originalColor.B * 255 + 30, 255)
+            )
+        }):Play()
+    end)
+    
+    Button.MouseLeave:Connect(function()
+        TweenService:Create(Button, TweenInfo.new(0.2), {
+            BackgroundColor3 = originalColor
+        }):Play()
+    end)
+    
+    Button.MouseButton1Click:Connect(function()
+        TweenService:Create(Button, TweenInfo.new(0.1), {
+            BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+        }):Play()
+        task.wait(0.1)
+        TweenService:Create(Button, TweenInfo.new(0.1), {
+            BackgroundColor3 = originalColor
+        }):Play()
+        
+        if callback then
+            callback()
+        end
+    end)
+    
+    return Button
+end
+
+-- Funcao para criar Slider
 local function CreateSlider(text, min, max, default, callback)
     local Frame = Instance.new("Frame")
     Frame.Size = UDim2.new(1, 0, 0, 65)
@@ -408,7 +559,10 @@ local function CreateSlider(text, min, max, default, callback)
         SliderFill.Size = UDim2.new(pos, 0, 1, 0)
         Label.Text = text .. ": " .. value
         callback(value)
-        SaveConfig() -- Auto-save
+        
+        if Settings.AutoSave then
+            SaveConfig()
+        end
     end
     
     SliderBg.InputBegan:Connect(function(input)
@@ -433,7 +587,7 @@ local function CreateSlider(text, min, max, default, callback)
     Frame.Parent = ContentFrame
 end
 
--- Crear secciones
+-- Criar secoes
 local function CreateSection(text)
     local Section = Instance.new("TextLabel")
     Section.Size = UDim2.new(1, 0, 0, 35)
@@ -464,6 +618,190 @@ CreateSlider("Max Distance", 100, 2000, Features.MaxDistance, function(value)
     Features.MaxDistance = value
 end)
 
+CreateSection("CONFIG")
+
+CreateSimpleToggle("Auto Load", Settings.AutoLoad, function(state)
+    Settings.AutoLoad = state
+    SaveSettings(Settings)
+    StatusLabel.Text = state and "AutoLoad: ON" or "AutoLoad: OFF"
+    StatusLabel.TextColor3 = state and Color3.fromRGB(100, 255, 150) or Color3.fromRGB(255, 150, 100)
+end)
+
+CreateSimpleToggle("Auto Save", Settings.AutoSave, function(state)
+    Settings.AutoSave = state
+    SaveSettings(Settings)
+end)
+
+CreateButton("Save Config", Color3.fromRGB(80, 180, 100), function()
+    SaveConfig()
+    
+    local Notify = Instance.new("TextLabel")
+    Notify.Size = UDim2.new(1, 0, 0, 30)
+    Notify.Position = UDim2.new(0, 0, 0, -35)
+    Notify.BackgroundColor3 = Color3.fromRGB(80, 180, 100)
+    Notify.Text = "Config Saved!"
+    Notify.TextColor3 = Color3.fromRGB(255, 255, 255)
+    Notify.TextSize = 14
+    Notify.Font = Enum.Font.GothamBold
+    Notify.Parent = MainFrame
+    
+    local NotifyCorner = Instance.new("UICorner")
+    NotifyCorner.CornerRadius = UDim.new(0, 8)
+    NotifyCorner.Parent = Notify
+    
+    TweenService:Create(Notify, TweenInfo.new(0.3), {
+        Position = UDim2.new(0, 0, 0, 5)
+    }):Play()
+    
+    task.wait(1.5)
+    
+    TweenService:Create(Notify, TweenInfo.new(0.3), {
+        Position = UDim2.new(0, 0, 0, -35),
+        BackgroundTransparency = 1,
+        TextTransparency = 1
+    }):Play()
+    
+    task.wait(0.3)
+    Notify:Destroy()
+end)
+
+CreateButton("Load Config", Color3.fromRGB(100, 150, 220), function()
+    local loaded = LoadConfig()
+    
+    for k, v in pairs(loaded.Features) do
+        Features[k] = v
+    end
+    
+    Keybinds = {}
+    for k, v in pairs(loaded.Keybinds or {}) do
+        if v then
+            local keyName = v:match("Enum%.KeyCode%.(.+)")
+            if keyName and Enum.KeyCode[keyName] then
+                Keybinds[k] = Enum.KeyCode[keyName]
+            end
+        end
+    end
+    
+    -- Atualizar UI
+    for _, child in pairs(ContentFrame:GetDescendants()) do
+        if child:IsA("TextButton") and child.Parent:FindFirstChild("TextLabel") then
+            local label = child.Parent.TextLabel.Text
+            for featureKey, featureValue in pairs(Features) do
+                local featureName = featureKey:gsub("([A-Z])", " %1"):gsub("^%s", "")
+                if label == featureName or 
+                   (featureKey == "SilentAim" and label == "Silent Aim") or
+                   (featureKey == "ESP" and label == "Enable ESP") or
+                   (featureKey == "TeamCheck" and label == "Team Check") or
+                   (featureKey == "ShowSkeleton" and label == "Skeleton") or
+                   (featureKey == "ShowTracer" and label == "Tracers") or
+                   (featureKey == "ShowHeadDot" and label == "Head Dot") or
+                   (featureKey == "ShowInfo" and label == "Info Text") then
+                    if child.Text == "ON" or child.Text == "OFF" then
+                        child.Text = featureValue and "ON" or "OFF"
+                        child.BackgroundColor3 = featureValue and Color3.fromRGB(80, 200, 120) or Color3.fromRGB(200, 70, 70)
+                    end
+                end
+            end
+        end
+    end
+    
+    local Notify = Instance.new("TextLabel")
+    Notify.Size = UDim2.new(1, 0, 0, 30)
+    Notify.Position = UDim2.new(0, 0, 0, -35)
+    Notify.BackgroundColor3 = Color3.fromRGB(100, 150, 220)
+    Notify.Text = "Config Loaded!"
+    Notify.TextColor3 = Color3.fromRGB(255, 255, 255)
+    Notify.TextSize = 14
+    Notify.Font = Enum.Font.GothamBold
+    Notify.Parent = MainFrame
+    
+    local NotifyCorner = Instance.new("UICorner")
+    NotifyCorner.CornerRadius = UDim.new(0, 8)
+    NotifyCorner.Parent = Notify
+    
+    TweenService:Create(Notify, TweenInfo.new(0.3), {
+        Position = UDim2.new(0, 0, 0, 5)
+    }):Play()
+    
+    task.wait(1.5)
+    
+    TweenService:Create(Notify, TweenInfo.new(0.3), {
+        Position = UDim2.new(0, 0, 0, -35),
+        BackgroundTransparency = 1,
+        TextTransparency = 1
+    }):Play()
+    
+    task.wait(0.3)
+    Notify:Destroy()
+end)
+
+CreateButton("Reset Config", Color3.fromRGB(200, 80, 80), function()
+    for k, v in pairs(DefaultFeatures) do
+        Features[k] = v
+    end
+    Keybinds = {}
+    
+    -- Atualizar UI
+    for _, child in pairs(ContentFrame:GetDescendants()) do
+        if child:IsA("TextButton") then
+            if child.Text == "ON" or child.Text == "OFF" then
+                local label = child.Parent:FindFirstChild("TextLabel")
+                if label then
+                    for featureKey, featureValue in pairs(Features) do
+                        local featureName = featureKey:gsub("([A-Z])", " %1"):gsub("^%s", "")
+                        if label.Text == featureName or 
+                           (featureKey == "SilentAim" and label.Text == "Silent Aim") or
+                           (featureKey == "ESP" and label.Text == "Enable ESP") or
+                           (featureKey == "TeamCheck" and label.Text == "Team Check") or
+                           (featureKey == "ShowSkeleton" and label.Text == "Skeleton") or
+                           (featureKey == "ShowTracer" and label.Text == "Tracers") or
+                           (featureKey == "ShowHeadDot" and label.Text == "Head Dot") or
+                           (featureKey == "ShowInfo" and label.Text == "Info Text") then
+                            child.Text = featureValue and "ON" or "OFF"
+                            child.BackgroundColor3 = featureValue and Color3.fromRGB(80, 200, 120) or Color3.fromRGB(200, 70, 70)
+                        end
+                    end
+                end
+            elseif child.Text:match("%[.+%]") then
+                child.Text = "[...]"
+                child.BackgroundColor3 = Color3.fromRGB(45, 45, 55)
+                child.TextColor3 = Color3.fromRGB(150, 150, 160)
+            end
+        end
+    end
+    
+    SaveConfig()
+    
+    local Notify = Instance.new("TextLabel")
+    Notify.Size = UDim2.new(1, 0, 0, 30)
+    Notify.Position = UDim2.new(0, 0, 0, -35)
+    Notify.BackgroundColor3 = Color3.fromRGB(200, 80, 80)
+    Notify.Text = "Config Reset!"
+    Notify.TextColor3 = Color3.fromRGB(255, 255, 255)
+    Notify.TextSize = 14
+    Notify.Font = Enum.Font.GothamBold
+    Notify.Parent = MainFrame
+    
+    local NotifyCorner = Instance.new("UICorner")
+    NotifyCorner.CornerRadius = UDim.new(0, 8)
+    NotifyCorner.Parent = Notify
+    
+    TweenService:Create(Notify, TweenInfo.new(0.3), {
+        Position = UDim2.new(0, 0, 0, 5)
+    }):Play()
+    
+    task.wait(1.5)
+    
+    TweenService:Create(Notify, TweenInfo.new(0.3), {
+        Position = UDim2.new(0, 0, 0, -35),
+        BackgroundTransparency = 1,
+        TextTransparency = 1
+    }):Play()
+    
+    task.wait(0.3)
+    Notify:Destroy()
+end)
+
 -- FOV Circle
 local FOVCircle = Drawing.new("Circle")
 FOVCircle.Thickness = 2
@@ -474,7 +812,7 @@ FOVCircle.Visible = false
 FOVCircle.Color = Color3.fromRGB(100, 200, 255)
 FOVCircle.Transparency = 0.7
 
--- Funciones del Aimbot
+-- Funcoes do Aimbot
 local function isEnemy(player)
     if not Features.TeamCheck then return true end
     if not player.Team or not LocalPlayer.Team then return true end
@@ -544,7 +882,10 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
             end
             
             listeningForKey = nil
-            SaveConfig() -- Auto-save keybind
+            
+            if Settings.AutoSave then
+                SaveConfig()
+            end
         end
         return
     end
@@ -575,7 +916,9 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
                 end
             end
             
-            SaveConfig() -- Auto-save
+            if Settings.AutoSave then
+                SaveConfig()
+            end
         end
     end
 end)
@@ -745,7 +1088,7 @@ Players.PlayerRemoving:Connect(function(player)
     end
 end)
 
--- Tecla INSERT para mostrar/ocultar menú
+-- Tecla INSERT para mostrar/ocultar menu
 UserInputService.InputBegan:Connect(function(input)
     if input.KeyCode == Enum.KeyCode.Insert then
         if MainFrame.Visible then
@@ -755,27 +1098,33 @@ UserInputService.InputBegan:Connect(function(input)
             }):Play()
             task.wait(0.2)
             MainFrame.Visible = false
-            MainFrame.Size = UDim2.new(0, 340, 0, 480)
+            MainFrame.Size = UDim2.new(0, 340, 0, 520)
             MainFrame.Position = UDim2.new(0, 50, 0, 50)
         else
             MainFrame.Visible = true
             MainFrame.Size = UDim2.new(0, 0, 0, 0)
             MainFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
             TweenService:Create(MainFrame, TweenInfo.new(0.3, Enum.EasingStyle.Back), {
-                Size = UDim2.new(0, 340, 0, 480),
+                Size = UDim2.new(0, 340, 0, 520),
                 Position = UDim2.new(0, 50, 0, 50)
             }):Play()
         end
     end
 end)
 
--- Notificação de carga
+-- Notificacao de carga
 local function Notify(text)
-    game:GetService("StarterGui"):SetCore("SendNotification", {
-        Title = "FRIEND HUB",
-        Text = text,
-        Duration = 3
-    })
+    pcall(function()
+        game:GetService("StarterGui"):SetCore("SendNotification", {
+            Title = "FRIEND HUB",
+            Text = text,
+            Duration = 3
+        })
+    end)
 end
 
-Notify("Loaded successfully!\nAuto-Save enabled\nPress INSERT to open")
+if Settings.AutoLoad then
+    Notify("Loaded with saved config!\nPress INSERT to open")
+else
+    Notify("Loaded successfully!\nPress INSERT to open")
+end
