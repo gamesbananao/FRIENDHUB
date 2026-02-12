@@ -13,8 +13,8 @@ local CONFIG_FILE = "FriendHub_Config.json"
 
 -- Configurações padrão
 local DefaultFeatures = {
-    SilentAim = false,
-    ESP = false,
+    SilentAim = true,
+    ESP = true,
     TeamCheck = true,
     ShowSkeleton = true,
     ShowTracer = true,
